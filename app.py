@@ -1,20 +1,34 @@
 import streamlit as st
-from openai import OpenAI
+import google.generativeai as genai
 
-st.title('GenerateAI App - ☺ AI Code Review')
-st.header('Code Review ✒')
+c = open("key.txt")
+key = c.read()
 
-f = open('open_key.txt')
-OPENAI_API_KEY = f.read()
-client = OpenAI(api_key = OPENAI_API_KEY)
+genai.configure(api_key=key)
 
-query = st.text_area('📝 Enter The Code Here 📝:')
-if st.button('CLICK HERE 🖱'):
-    response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[
-            {"role": "system", "content": "analyze the submitted code and identify potential bugs, errors, or areas of improvement"},
-            {"role": "user", "content": query}
-        ]
-    )
-    st.write(response.choices[0].message.content)
+st.sidebar.title("Artificial Intelligence Chatbot Ⓜ ")
+st.header('conversation with Artificial Intelligence 🅰ℹ')
+st.balloons()
+
+name=genai.GenerativeModel(model_name="gemini-1.5-pro-latest",
+    system_instruction="""You're an AI Teaching Assistant that provides answers to user queries related to data science topics. 
+                         If 'hai'or 'hi' in the users request, respond with politely. Otherwise, if the user's query is unrelated to 
+                         data science, respond with 'I'm sorry, I don't have information about that.' If the user's query is not a greeting 
+                         and is related to data science, provide an appropriate answer.""")
+# ch means chat_history
+if "ch" not in st.session_state:
+    st.session_state["ch"]=[]
+
+chat = name.start_chat(history=st.session_state['ch'])
+for msg in chat.history:
+
+    st.chat_message(msg.role).write(msg.parts[0].text)
+
+user_prompt=st.chat_input()
+
+if user_prompt:
+    st.chat_message("user").write(user_prompt)
+    response=chat.send_message(user_prompt)
+    st.chat_message("ai").write(response.text)
+    print(chat.history)
+    st.session_state["ch"]=chat.history
