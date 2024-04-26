@@ -1,34 +1,44 @@
 import streamlit as st
+from langchain.document_loaders import PyPDFLoader
+from langchain_community.vectorstores import Chroma
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 import google.generativeai as genai
+from langchain_text_splitters import NLTKTextSplitter
 
-c = open("key.txt")
-key = c.read()
 
+
+
+st.header('RAG SYSTEM ON "Content behind" paper')
+loader=PyPDFLoader("pdf.pdf")
+
+pages=loader.load_and_split()
+
+page="".join([p.page_content for p in pages] )
+
+f=open('.gemini_api_key.txt')
+key=f.read()
 genai.configure(api_key=key)
 
-st.sidebar.title("Artificial Intelligence Chatbot Ⓜ ")
-st.header('conversation with Artificial Intelligence 🅰ℹ')
-st.balloons()
+text_splitter = NLTKTextSplitter(chunk_size=500, chunk_overlap=100)
+chunks=text_splitter.split_documents(pages)
 
-name=genai.GenerativeModel(model_name="gemini-1.5-pro-latest",
-    system_instruction="""You're an AI Teaching Assistant that provides answers to user queries related to data science topics. 
-                         If 'hai'or 'hi' in the users request, respond with politely. Otherwise, if the user's query is unrelated to 
-                         data science, respond with 'I'm sorry, I don't have information about that.' If the user's query is not a greeting 
-                         and is related to data science, provide an appropriate answer.""")
-# ch means chat_history
-if "ch" not in st.session_state:
-    st.session_state["ch"]=[]
+embedding_model = GoogleGenerativeAIEmbeddings(google_api_key=key, model='models/embedding-001')
+db=Chroma.from_documents(chunks,embedding_model,persist_directory="./chroma_db")
+db.persist()
+db_connection=Chroma(persist_directory="./chroma_db",embedding_function=embedding_model)
+retriever = db_connection.as_retriever(search_kwargs={"k": 5})
+model=genai.GenerativeModel('gemini-1.5-pro-latest')
 
-chat = name.start_chat(history=st.session_state['ch'])
-for msg in chat.history:
+chat=model.start_chat(history=[])
 
-    st.chat_message(msg.role).write(msg.parts[0].text)
+user_input_1=st.text_input("Enter your question....")
 
-user_prompt=st.chat_input()
+user_input = page + user_input_1
 
-if user_prompt:
-    st.chat_message("user").write(user_prompt)
-    response=chat.send_message(user_prompt)
-    st.chat_message("ai").write(response.text)
-    print(chat.history)
-    st.session_state["ch"]=chat.history
+response = chat.send_message(user_input)
+
+if st.button("Answer"):
+    st.subheader("user query.....")
+    st.write(user_input_1)
+    st.subheader("Systems Response")
+    st.write(response.text)
