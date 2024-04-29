@@ -1,44 +1,51 @@
 import streamlit as st
-from langchain.document_loaders import PyPDFLoader
-from langchain_community.vectorstores import Chroma
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
-import google.generativeai as genai
-from langchain_text_splitters import NLTKTextSplitter
+import pandas as pd
+from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
+from sklearn.metrics.pairwise import cosine_similarity
+import joblib
 
+# Function to load data
+def load_data(csv_file):
+    data = pd.read_csv(csv_file)
+    return data
 
+# Function to load trained models
+def load_models():
+    count_vectorizer = joblib.load(r"E:\Sravanthi Files\count_vectorizer.pkl")
+    tfidf_transformer = joblib.load(r"E:\Sravanthi Files\tfidf_transformer.pkl")
+    tfidf_matrix = joblib.load(r"E:\Sravanthi Files\tfidf_matrix.pkl")
+    return count_vectorizer, tfidf_transformer, tfidf_matrix
 
+# Function to preprocess query
+def preprocess_query(query, count_vectorizer):
+    query_vector = count_vectorizer.transform([query])
+    return query_vector
 
-st.header('RAG SYSTEM ON "Content behind" paper')
-loader=PyPDFLoader("pdf.pdf")
+# Function to retrieve similar documents
+def retrieve_similar_documents(query, count_vectorizer, tfidf_transformer, tfidf_matrix, data):
+    query_vector = preprocess_query(query, count_vectorizer)
+    query_tfidf = tfidf_transformer.transform(query_vector)
+    similarity_scores = cosine_similarity(query_tfidf, tfidf_matrix)
+    sorted_indices = similarity_scores.argsort()[0][::-1]
+    top_indices = sorted_indices[:5]
+    return data.iloc[top_indices]["file_content_chunks"].tolist()
 
-pages=loader.load_and_split()
+# Main function
+def main():
+    st.title('Search Engine')
 
-page="".join([p.page_content for p in pages] )
+    data = load_data(r"E:\Sravanthi Files\Sub_Titles1.csv")
 
-f=open('.gemini_api_key.txt')
-key=f.read()
-genai.configure(api_key=key)
+    count_vectorizer, tfidf_transformer, tfidf_matrix = load_models()
 
-text_splitter = NLTKTextSplitter(chunk_size=500, chunk_overlap=100)
-chunks=text_splitter.split_documents(pages)
+    query = st.text_input('Enter movie name:', '')
 
-embedding_model = GoogleGenerativeAIEmbeddings(google_api_key=key, model='models/embedding-001')
-db=Chroma.from_documents(chunks,embedding_model,persist_directory="./chroma_db")
-db.persist()
-db_connection=Chroma(persist_directory="./chroma_db",embedding_function=embedding_model)
-retriever = db_connection.as_retriever(search_kwargs={"k": 5})
-model=genai.GenerativeModel('gemini-1.5-pro-latest')
+    if st.button('Explore here'):
+        if query:
+            retrieved_documents = retrieve_similar_documents(query, count_vectorizer, tfidf_transformer, tfidf_matrix, data)
+            st.subheader('Top 5 documents related to the query:')
+            for i, doc in enumerate(retrieved_documents, 1):
+                st.write(f"Document {i}: {doc}")
 
-chat=model.start_chat(history=[])
-
-user_input_1=st.text_input("Enter your question....")
-
-user_input = page + user_input_1
-
-response = chat.send_message(user_input)
-
-if st.button("Answer"):
-    st.subheader("user query.....")
-    st.write(user_input_1)
-    st.subheader("Systems Response")
-    st.write(response.text)
+if __name__ == '__main__':
+    main()
